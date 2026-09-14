@@ -71,6 +71,12 @@ export interface ProjectionThreadDetailQuery {
    * the activity query. Omit this option to preserve the full detail response.
    */
   readonly activityKinds?: ReadonlyArray<string>;
+  /**
+   * Also return a thread that has been archived. Deleted threads are never
+   * returned. Off by default so callers that act on a thread keep seeing only
+   * live ones.
+   */
+  readonly includeArchived?: boolean;
 }
 
 /**

@@ -928,6 +928,90 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("renders a referenced thread into the provider envelope, archived included", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const referencedThreadId = ThreadId.make("thread-referenced");
+
+      yield* harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-referenced"),
+        threadId: referencedThreadId,
+        projectId: asProjectId("project-1"),
+        title: "Fix login redirect",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-referenced"),
+        threadId: referencedThreadId,
+        message: {
+          messageId: asMessageId("referenced-user-message"),
+          role: "user",
+          text: "Users get bounced after login",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* harness.engine.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("cmd-archive-referenced"),
+        threadId: referencedThreadId,
+      });
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-thread-reference"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-thread-reference"),
+          role: "user",
+          text: "Continue [Fix login redirect](t3-context://v1/thread/thread-ref) not [me](t3-context://v1/thread/self-ref)",
+          attachments: [],
+          context: {
+            version: 1,
+            records: [
+              {
+                version: 1,
+                kind: "thread",
+                contextId: ComposerContextId.make("thread-ref"),
+                label: "Fix login redirect",
+                threadId: referencedThreadId,
+              },
+              {
+                version: 1,
+                kind: "thread",
+                contextId: ComposerContextId.make("self-ref"),
+                label: "me",
+                threadId: ThreadId.make("thread-1"),
+              },
+            ],
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      });
+
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
+      const input = (harness.sendTurn.mock.calls[1]?.[0] as { input: string }).input;
+      expect(input).toContain("[Thread: Fix login redirect; ref=thread-ref]");
+      expect(input).toContain('<context kind="thread" id="thread-ref">');
+      expect(input).toContain("title: Fix login redirect");
+      expect(input).toContain("status: archived");
+      expect(input).toContain("USER:\nUsers get bounced after login");
+      expect(input).toContain('<context kind="thread" id="self-ref" unavailable="true"/>');
+    }),
+  );
+
   effectIt.effect("retains a turn dispatched immediately after start until activation", () =>
     Effect.gen(function* () {
       const activation = yield* Deferred.make<void>();

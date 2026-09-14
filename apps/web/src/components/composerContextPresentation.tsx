@@ -3,7 +3,12 @@ import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type { PreviewAnnotationPayload } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
-import { GitPullRequestIcon, MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
+import {
+  GitPullRequestIcon,
+  MessageCircleIcon,
+  MessagesSquareIcon,
+  MousePointerClickIcon,
+} from "lucide-react";
 import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
@@ -25,10 +30,12 @@ import {
   reviewCommentContextId,
   reviewCommentContextLabel,
   terminalContextReference,
+  threadReferenceContextId,
   uploadedAttachmentContextRecord,
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+import type { ThreadReferenceContext } from "~/threadReferenceContext";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import {
   createContextPresentationRegistry,
@@ -60,6 +67,7 @@ export type ComposerDraftContextRecord =
   | { kind: "terminal"; record: TerminalContextDraft }
   | { kind: "review-comment"; record: ReviewCommentContext }
   | { kind: "preview-annotation"; record: PreviewAnnotationPayload }
+  | { kind: "thread"; record: ThreadReferenceContext }
   | { kind: "image"; record: ComposerImageAttachment; upload?: AttachmentUploadState | undefined }
   | { kind: "file"; record: ComposerFileAttachment; upload?: AttachmentUploadState | undefined };
 
@@ -97,6 +105,7 @@ export function composerContextRecordsFromDraft(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments?: ReadonlyArray<ReviewCommentContext>;
   previewAnnotations?: ReadonlyArray<PreviewAnnotationPayload>;
+  threadReferences?: ReadonlyArray<ThreadReferenceContext>;
   images?: ReadonlyArray<ComposerImageAttachment>;
   files?: ReadonlyArray<ComposerFileAttachment>;
   uploadsByImageId?: Readonly<Record<string, AttachmentUploadState>>;
@@ -124,6 +133,9 @@ export function composerContextRecordsFromDraft(input: {
   }
   for (const record of input.previewAnnotations ?? []) {
     records.set(previewAnnotationContextId(record.id), { kind: "preview-annotation", record });
+  }
+  for (const record of input.threadReferences ?? []) {
+    records.set(threadReferenceContextId(record.id), { kind: "thread", record });
   }
   return records;
 }
@@ -336,7 +348,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
   ComposerContextRenderContext,
   ReactElement
 >({
-  requiredKinds: ["image", "file", "terminal", "review-comment", "preview-annotation"],
+  requiredKinds: ["image", "file", "terminal", "review-comment", "preview-annotation", "thread"],
   handlers: [
     {
       kind: "terminal",
@@ -367,6 +379,31 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
       render: (entry, context) =>
         entry.kind === "file" ? (
           <FileContextChip record={entry.record} upload={entry.upload} />
+        ) : (
+          <UnresolvedContextChip label={context.label} />
+        ),
+    },
+    {
+      kind: "thread",
+      canRender: (entry) => entry.kind === "thread",
+      render: (entry, context, definition) =>
+        entry.kind === "thread" ? (
+          <ContextChip
+            icon={
+              <MessagesSquareIcon
+                className={cn(
+                  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+                  CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES.thread,
+                  "size-3.5",
+                )}
+              />
+            }
+            label={entry.record.title}
+            kindLabel="Thread"
+            details={`Thread: ${entry.record.title}`}
+            detailsMode={definition.capabilities.details}
+            toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.thread}
+          />
         ) : (
           <UnresolvedContextChip label={context.label} />
         ),

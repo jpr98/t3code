@@ -1,6 +1,8 @@
 import {
   type ChatAttachment,
   CommandId,
+  type ComposerContextId,
+  type ComposerContextRecord,
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
@@ -14,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
+import { renderThreadReferenceContext } from "../threadReferenceContext.ts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -631,6 +634,41 @@ const make = Effect.gen(function* () {
     return yield* projectionSnapshotQuery
       .getThreadDetailById(threadId, { activityKinds: [] })
       .pipe(Effect.map(Option.getOrUndefined));
+  });
+
+  /**
+   * Thread references carry only an id on the wire; the provider gets the referenced
+   * conversation rendered here. A thread that is missing, deleted, or the current thread
+   * itself projects as unavailable rather than failing the turn.
+   */
+  const resolveThreadReferenceBodies = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly records: ReadonlyArray<ComposerContextRecord>;
+  }) {
+    const bodies = new Map<ComposerContextId, string | null>();
+    for (const record of input.records) {
+      if ("payload" in record || record.kind !== "thread" || bodies.has(record.contextId)) {
+        continue;
+      }
+      if (record.threadId === input.threadId) {
+        bodies.set(record.contextId, null);
+        continue;
+      }
+      const referenced = yield* projectionSnapshotQuery
+        .getThreadDetailById(record.threadId, { activityKinds: [], includeArchived: true })
+        .pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider command reactor could not resolve thread reference", {
+              threadId: input.threadId,
+              referencedThreadId: record.threadId,
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as(undefined)),
+          ),
+        );
+      bodies.set(record.contextId, referenced ? renderThreadReferenceContext(referenced) : null);
+    }
+    return bodies;
   });
 
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
@@ -1544,11 +1582,20 @@ const make = Effect.gen(function* () {
       turnsAfterCompaction.set(event.payload.threadId, queued);
       return;
     }
+    const contextRecords = message.context?.records ?? [];
+    const threadReferenceBodies = yield* resolveThreadReferenceBodies({
+      threadId: event.payload.threadId,
+      records: contextRecords,
+    });
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageText: projectComposerContextForProvider({
         text: message.text,
-        records: message.context?.records ?? [],
+        records: contextRecords,
+        resolvePayload: (record) =>
+          record.kind === "thread"
+            ? (threadReferenceBodies.get(record.contextId) ?? null)
+            : undefined,
       }),
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined

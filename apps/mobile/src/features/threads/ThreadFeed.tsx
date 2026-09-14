@@ -1750,6 +1750,14 @@ function UserMessageContent(props: UserMessageContentProps) {
       props.linkHandlers.onLinkPress?.(record.path);
       return;
     }
+    // A thread chip opens the referenced thread in this environment.
+    if (record?.kind === "thread" && "threadId" in record) {
+      navigation.navigate("Thread", {
+        environmentId: String(props.environmentId),
+        threadId: String(record.threadId),
+      });
+      return;
+    }
     // Documents open in the file screen; pictures, video and PDF keep their native viewers.
     const document = composerDocumentAttachmentRecord(record);
     if (document) {

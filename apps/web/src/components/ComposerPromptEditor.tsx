@@ -868,6 +868,8 @@ interface ComposerPromptEditorProps {
   importContextFragment?:
     | ((fragment: ComposerContextClipboardFragment) => ReadonlyMap<string, string>)
     | undefined;
+  /** Rewrites pasted plain text into canonical prompt text, or null to paste as is. */
+  rewritePastedPlainText?: ((text: string) => string | null) | undefined;
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
@@ -1293,9 +1295,11 @@ function ComposerChipSelectionPlugin() {
 
 function ComposerInlineTokenPastePlugin(props: {
   importContextFragment?: ComposerPromptEditorProps["importContextFragment"];
+  rewritePastedPlainText?: ComposerPromptEditorProps["rewritePastedPlainText"];
 }) {
   const [editor] = useLexicalComposerContext();
   const importContextFragment = props.importContextFragment;
+  const rewritePastedPlainText = props.rewritePastedPlainText;
 
   useEffect(
     () =>
@@ -1305,8 +1309,9 @@ function ComposerInlineTokenPastePlugin(props: {
         createContextReferenceNode: $createComposerContextReferenceNode,
         getExpandedAbsoluteOffsetForPoint,
         ...(importContextFragment ? { importContextFragment } : {}),
+        ...(rewritePastedPlainText ? { rewritePastedPlainText } : {}),
       }),
-    [editor, importContextFragment],
+    [editor, importContextFragment, rewritePastedPlainText],
   );
 
   return null;
@@ -1623,6 +1628,7 @@ function ComposerPromptEditorInner({
   contextRecords,
   buildContextClipboardFragment,
   importContextFragment,
+  rewritePastedPlainText,
   skills,
   disabled,
   placeholder,
@@ -2050,7 +2056,10 @@ function ComposerPromptEditorInner({
           <ComposerInlineTokenArrowPlugin />
           <ComposerInlineTokenSelectionNormalizePlugin />
           <ComposerInlineTokenBackspacePlugin />
-          <ComposerInlineTokenPastePlugin importContextFragment={importContextFragment} />
+          <ComposerInlineTokenPastePlugin
+            importContextFragment={importContextFragment}
+            rewritePastedPlainText={rewritePastedPlainText}
+          />
           <ComposerContextClipboardPlugin
             buildContextClipboardFragment={buildContextClipboardFragment}
           />
@@ -2068,6 +2077,7 @@ export function ComposerPromptEditor({
   contextRecords,
   buildContextClipboardFragment,
   importContextFragment,
+  rewritePastedPlainText,
   skills,
   disabled,
   placeholder,
@@ -2115,6 +2125,7 @@ export function ComposerPromptEditor({
           contextRecords={contextRecords}
           buildContextClipboardFragment={buildContextClipboardFragment}
           importContextFragment={importContextFragment}
+          rewritePastedPlainText={rewritePastedPlainText}
           skills={skills}
           disabled={disabled}
           placeholder={placeholder}

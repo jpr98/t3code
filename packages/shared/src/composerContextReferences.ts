@@ -233,20 +233,35 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
       return `path: ${record.path}`;
     case "skill":
       return `name: ${record.name}`;
+    case "thread":
+      return `threadId: ${record.threadId}`;
   }
 }
+
+/**
+ * Server-side hook for kinds whose payload lives outside the record (a thread reference is
+ * resolved from the read model at turn start). Return a string to use as the entry body,
+ * `null` to mark the entry unavailable, or `undefined` to keep the record's own formatting.
+ */
+type ComposerContextPayloadResolver = (
+  record: KnownComposerContextRecord,
+) => string | null | undefined;
 
 function formatEnvelopeEntry(
   kind: ComposerContextKind,
   contextId: ComposerContextId,
   record: ComposerContextRecord | undefined,
+  resolvePayload: ComposerContextPayloadResolver | undefined,
 ): string {
   const open = `<${CONTEXT_ENTRY_TAG} kind="${escapeAttribute(kind)}" id="${escapeAttribute(contextId)}"`;
   if (!record) return `${open} unavailable="true"/>`;
+  const resolved = "payload" in record ? undefined : resolvePayload?.(record);
+  if (resolved === null) return `${open} unavailable="true"/>`;
   const body =
-    "payload" in record
+    resolved ??
+    ("payload" in record
       ? JSON.stringify(record.payload)
-      : formatComposerContextProviderPayload(record);
+      : formatComposerContextProviderPayload(record));
   return `${open}>\n${escapeComposerContextPayloadText(body)}\n</${CONTEXT_ENTRY_TAG}>`;
 }
 
@@ -258,6 +273,7 @@ function formatEnvelopeEntry(
 export function projectComposerContextForProvider(input: {
   text: string;
   records: ReadonlyArray<ComposerContextRecord>;
+  resolvePayload?: ComposerContextPayloadResolver;
 }): string {
   const occurrences = collectComposerContextReferences(input.text);
   if (occurrences.length === 0) return input.text;
@@ -283,6 +299,7 @@ export function projectComposerContextForProvider(input: {
       record?.kind ?? occurrence.kind,
       occurrence.contextId,
       record,
+      input.resolvePayload,
     );
     entries.push(entry);
   }

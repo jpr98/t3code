@@ -1,5 +1,6 @@
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { useNavigate } from "@tanstack/react-router";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -113,6 +114,7 @@ import {
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
+  MessagesSquareIcon,
   Minimize2Icon,
   MousePointerClickIcon,
   PaintbrushIcon,
@@ -2700,6 +2702,51 @@ function UserMessageMentionChip(props: {
   );
 }
 
+/** Opens the referenced thread in this environment; the label is the title at send time. */
+function UserMessageThreadChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "thread" }>;
+  copyMarkdown: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const navigate = useNavigate();
+  const environmentId = ctx.threadRef?.environmentId;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Open thread ${props.record.label}`}
+            className={cn(
+              CHAT_INLINE_CHIP_CLASS_NAME,
+              CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.thread,
+              environmentId ? "cursor-pointer focus-visible:outline-2" : undefined,
+            )}
+            data-markdown-copy={props.copyMarkdown}
+            onClick={() => {
+              if (!environmentId) return;
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: props.record.threadId },
+              });
+            }}
+          >
+            <MessagesSquareIcon
+              aria-hidden="true"
+              className={cn(
+                COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+                CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES.thread,
+              )}
+            />
+            <span className={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}>{props.record.label}</span>
+          </button>
+        }
+      />
+      <TooltipPopup>Thread: {props.record.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function UserMessageContextChip(props: {
   icon: ReactNode;
   label: string;
@@ -2937,6 +2984,16 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
             copyMarkdown={context.copyMarkdown}
             toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.skill}
           />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "thread",
+      canRender: (record) => record.kind === "thread",
+      render: (record, context) =>
+        record.kind === "thread" ? (
+          <UserMessageThreadChip record={record} copyMarkdown={context.copyMarkdown} />
         ) : (
           <UnavailableUserMessageContextChip {...context} />
         ),

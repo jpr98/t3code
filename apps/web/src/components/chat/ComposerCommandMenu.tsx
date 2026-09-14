@@ -13,6 +13,7 @@ import {
 import {
   BlocksIcon,
   FolderIcon,
+  MessagesSquareIcon,
   PackageIcon,
   SettingsIcon,
   UserRoundIcon,
@@ -64,6 +65,13 @@ export type ComposerCommandItem =
       id: string;
       type: "pull-request";
       pullRequest: PullRequestContextMetadata;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "thread";
+      threadId: string;
       label: string;
       description: string;
     };
@@ -188,6 +196,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           aria-label={pullRequestPresentation.label}
           className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
         />
+      ) : null}
+      {props.item.type === "thread" ? (
+        <MessagesSquareIcon role="img" aria-label="Thread" className="size-4 shrink-0" />
       ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium">

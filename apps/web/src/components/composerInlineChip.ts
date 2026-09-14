@@ -36,6 +36,7 @@ export const CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES = {
   "pull-request": "text-current",
   skill: "text-current",
   citation: "text-current",
+  thread: "text-current",
 } as const;
 
 /**
@@ -56,6 +57,7 @@ export const CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES = {
   "pull-request": `${CONTEXT_INLINE_CHIP_TONE_CLASS_NAME} [--context-chip-accent:oklch(0.62_0.16_277)]`,
   skill: `${CONTEXT_INLINE_CHIP_TONE_CLASS_NAME} [--context-chip-accent:oklch(0.62_0.16_322)]`,
   citation: `${CONTEXT_INLINE_CHIP_TONE_CLASS_NAME} [--context-chip-accent:oklch(0.62_0.16_259)]`,
+  thread: `${CONTEXT_INLINE_CHIP_TONE_CLASS_NAME} [--context-chip-accent:oklch(0.62_0.134_190)]`,
 } as const;
 
 export const PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES = {

@@ -15,6 +15,7 @@ import type {
   PreviewAnnotationPayload,
   ReviewCommentContextRecord,
   TerminalContextRecord,
+  ThreadContextRecord,
   ThreadId,
 } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
@@ -38,6 +39,7 @@ import {
   type TerminalContextDraft,
 } from "./terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+import type { ThreadReferenceContext } from "~/threadReferenceContext";
 
 /**
  * Builds the wire records behind a draft's inline references, and the reverse for reading a
@@ -169,6 +171,37 @@ export function terminalContextRecord(context: TerminalContextDraft): TerminalCo
   };
 }
 
+export function threadReferenceContextId(threadId: string): ComposerContextId {
+  return toKindScopedComposerContextId("thread", threadId);
+}
+
+export function threadReferenceContextReference(
+  reference: ThreadReferenceContext,
+): ComposerContextReference {
+  return {
+    kind: "thread",
+    contextId: threadReferenceContextId(reference.id),
+    label: reference.title,
+  };
+}
+
+export function threadReferenceContextRecord(
+  reference: ThreadReferenceContext,
+): ThreadContextRecord {
+  return {
+    version: 1,
+    contextId: threadReferenceContextId(reference.id),
+    kind: "thread",
+    label: sanitizeComposerContextLabel(reference.title, "thread"),
+    threadId: reference.id as ThreadId,
+  };
+}
+
+/** The wire record carries the real thread id, so no producer-id folding has to be undone. */
+export function threadReferenceFromRecord(record: ThreadContextRecord): ThreadReferenceContext {
+  return { id: record.threadId, title: record.label };
+}
+
 export function reviewCommentContextRecord(
   comment: ReviewCommentContext,
 ): ReviewCommentContextRecord {
@@ -295,6 +328,7 @@ export function buildMessageContext(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments: ReadonlyArray<ReviewCommentContext>;
   previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
+  threadReferences?: ReadonlyArray<ThreadReferenceContext>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
   // An annotation's screenshot travels as the image attachment that reuses its id.
@@ -311,6 +345,7 @@ export function buildMessageContext(input: {
         screenshotContextId: screenshotAttachmentIds.has(annotation.id) ? annotation.id : undefined,
       }),
     ),
+    ...(input.threadReferences ?? []).map(threadReferenceContextRecord),
     ...(input.attachments ?? []).map(attachmentContextRecord),
   ];
   return records.length === 0 ? undefined : { version: 1, records };

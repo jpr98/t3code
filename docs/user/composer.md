@@ -69,6 +69,28 @@ The quoted text and comment count toward the message limit.
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.
 
+## Reference another thread
+
+Point the agent at an earlier conversation instead of retyping it. On web and desktop, type `@`
+followed by part of a thread's title to list matching threads in the current environment beside
+files and folders, and choose one to insert it as a chip. You can also paste a thread ID or a
+thread link into the composer; when it names a thread in this environment's thread list, it
+becomes the same chip. **Copy Thread ID** in the sidebar or command palette provides the ID,
+except for threads with a linked pull request, where it copies the pull request link instead;
+use the address bar for those.
+
+When the message is sent, the agent receives that thread's conversation: its title, branch, the
+user and assistant messages, and the files each turn changed. Very long conversations are
+trimmed to the first message and the most recent ones; the agent can read the rest of the
+conversation on demand with its `read_thread` tool, which also lets it look up any other
+thread in the environment by ID. A referenced thread stays readable to the agent after it is
+archived. Deleted threads and threads from other environments cannot be
+read, and the chip then tells the agent the reference is unavailable. A thread never references
+itself.
+
+Select the chip in a sent message to open that thread. Mobile shows and opens thread chips in
+messages, but does not insert them.
+
 ## Recall a sent prompt
 
 Press `ArrowUp` in an empty composer to bring back the last prompt you sent in this thread. Press

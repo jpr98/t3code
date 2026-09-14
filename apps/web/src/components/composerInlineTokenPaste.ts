@@ -40,6 +40,11 @@ interface ComposerInlineTokenPasteOptions {
   importContextFragment?: (
     fragment: ComposerContextClipboardFragment,
   ) => ReadonlyMap<string, string>;
+  /**
+   * Turns pasted plain text into canonical prompt text before tokens are parsed, such as a
+   * thread id becoming a thread reference link. Returns null to leave the paste as it is.
+   */
+  rewritePastedPlainText?: (text: string) => string | null;
 }
 
 export function registerComposerInlineTokenPaste(
@@ -59,7 +64,8 @@ export function registerComposerInlineTokenPaste(
       if (pastedText.length === 0) {
         return false;
       }
-      const text = importPastedComposerText(event.clipboardData, options.importContextFragment);
+      const imported = importPastedComposerText(event.clipboardData, options.importContextFragment);
+      const text = options.rewritePastedPlainText?.(imported) ?? imported;
       // Token grammar requires trailing whitespace; a virtual newline lets a
       // mention at the very end of the pasted text still parse.
       const tokens = collectComposerPromptInlineTokens(`${text}\n`).filter(

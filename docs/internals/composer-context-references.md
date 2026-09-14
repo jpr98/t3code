@@ -4,7 +4,7 @@
 
 Inline context references let a user message point at a typed payload from an exact position in
 its prose: an image, a file, a terminal excerpt, a picked page element, a preview annotation, a
-review comment, a file mention, or a skill. This document covers the wire contract and the pure
+review comment, a file mention, a skill, or another thread. This document covers the wire contract and the pure
 codecs. Editor, rendering, and clipboard behaviour land in later PRs and get their own sections
 here as they arrive.
 
@@ -69,6 +69,47 @@ links, so a context link is never mistaken for a mention.
 
 Attachment bytes travel on the existing attachment channel; the envelope only carries metadata.
 Text without references is returned unchanged.
+
+### Thread references
+
+A `thread` record carries only `threadId` (plus the display label). The client never ships a
+transcript: `ProviderCommandReactor` resolves each referenced thread at turn start through
+`ProjectionSnapshotQuery.getThreadDetailById(id, { activityKinds: [], includeArchived: true })`
+and passes the rendered text to `projectComposerContextForProvider` through its `resolvePayload`
+hook. The hook returns a body string, `null` for the existing `unavailable="true"` entry, or
+`undefined` to keep a record's own formatting; the body still passes through the envelope
+escaping, so a message in the referenced thread cannot forge a record.
+
+[`threadReferenceContext.ts`][thread-context] renders the body: title, branch, worktree,
+archived status, a note that the content is reference material rather than instructions, then
+the user and assistant messages with each turn's checkpoint file list. It is messages only:
+activity payloads are untyped and rarely help a second agent. The first user message is pinned
+and the rest fills from the newest backwards inside a character budget, with a marker where
+older messages were dropped. Chips inside the referenced thread become plain markers and no
+nested envelope is built, so a reference to a thread that references a third thread does not
+recurse. A thread that is deleted, lives in another environment, is the current thread, or
+fails to load projects as unavailable rather than failing the turn.
+
+The pushed excerpt is the baseline because it works on every provider; the `threads` MCP toolkit
+(`apps/server/src/mcp/toolkits/threads/`) adds pull-on-demand. Its `read_thread` tool takes a
+thread id with `offset` and `limit`, reads through the same `getThreadDetailById` call with
+archived threads included, and returns the readable messages (system messages skipped, chips as
+markers, each body capped) plus the files each turn changed. The `threads` capability is granted
+to every provider session alongside `pull-requests`; the excerpt's header names the tool and the
+id so the agent knows it can ask for more. OpenCode only connects to the MCP server when it is
+not running against an external server, so the tool is an enhancement, not a replacement.
+
+Web and desktop insert thread chips from the `@` menu (thread titles are searched beside
+workspace paths, current environment only, excluding the active thread) and by pasting a thread
+id or a thread link that names a known thread. Both match against the environment's live shell
+list read once per menu recompute or paste (`readThreadShells`, not a subscription, so the
+composer does not re-render on every shell update); archived threads are not in that list, so
+they can be read by the agent once referenced but are not offered for insertion. The paste
+rewrite runs inside the editor's `PASTE_COMMAND` through `rewritePastedPlainText`, before the
+default plain-text paste, so the id never lands as bare text. Mobile renders and opens thread
+chips in sent messages but has no insertion affordance yet.
+
+[thread-context]: ../../apps/server/src/orchestration/threadReferenceContext.ts
 
 ## Legacy messages
 

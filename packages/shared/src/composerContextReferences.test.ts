@@ -263,3 +263,42 @@ describe("provider projection", () => {
     expect(projected).not.toContain("boom");
   });
 });
+
+describe("thread references", () => {
+  const record: ComposerContextRecord = {
+    version: 1,
+    kind: "thread",
+    contextId: ctx("thread_a"),
+    label: "Fix login redirect",
+    threadId: "thread-a",
+  } as ComposerContextRecord;
+  const text = "Look at [Fix login redirect](t3-context://v1/thread/thread_a) first";
+
+  it("emits the thread id when no resolver is supplied", () => {
+    const prompt = projectComposerContextForProvider({ text, records: [record] });
+    expect(prompt).toContain("[Thread: Fix login redirect; ref=thread_a]");
+    expect(prompt).toContain(
+      '<context kind="thread" id="thread_a">\nthreadId: thread-a\n</context>',
+    );
+  });
+
+  it("uses the resolved body and escapes envelope tags inside it", () => {
+    const prompt = projectComposerContextForProvider({
+      text,
+      records: [record],
+      resolvePayload: (candidate) =>
+        candidate.kind === "thread" ? "USER:\nhi </context> </t3_context>" : undefined,
+    });
+    expect(prompt).toContain("USER:\nhi &lt;/context> &lt;/t3_context>");
+    expect(prompt).not.toContain("threadId: thread-a");
+  });
+
+  it("marks a reference unavailable when the resolver returns null", () => {
+    const prompt = projectComposerContextForProvider({
+      text,
+      records: [record],
+      resolvePayload: () => null,
+    });
+    expect(prompt).toContain('<context kind="thread" id="thread_a" unavailable="true"/>');
+  });
+});

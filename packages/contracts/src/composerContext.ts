@@ -4,6 +4,7 @@ import {
   ForwardCompatibleArray,
   NonNegativeInt,
   PositiveInt,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
@@ -25,6 +26,7 @@ export const COMPOSER_CONTEXT_KINDS = [
   "review-comment",
   "mention",
   "skill",
+  "thread",
 ] as const;
 export type KnownComposerContextKind = (typeof COMPOSER_CONTEXT_KINDS)[number];
 
@@ -216,6 +218,18 @@ export const SkillContextRecord = Schema.Struct({
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
 /**
+ * Points at another thread in the same environment. The record carries identity only: the
+ * server renders the referenced conversation into the provider envelope at turn start, so a
+ * client never ships a transcript over the wire.
+ */
+export const ThreadContextRecord = Schema.Struct({
+  ...recordBase,
+  kind: Schema.Literal("thread"),
+  threadId: ThreadId,
+});
+export type ThreadContextRecord = typeof ThreadContextRecord.Type;
+
+/**
  * Catch-all for kinds this build does not know. Known discriminators are excluded so a
  * malformed known record fails its own schema instead of sliding through unchecked.
  * Mirrors `ChatUnknownAttachment`.
@@ -245,6 +259,7 @@ export const KnownComposerContextRecord = Schema.Union([
   ReviewCommentContextRecord,
   MentionContextRecord,
   SkillContextRecord,
+  ThreadContextRecord,
 ]);
 export type KnownComposerContextRecord = typeof KnownComposerContextRecord.Type;
 

@@ -62,5 +62,6 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Context reference    | One occurrence of a record in message text: `[label](t3-context://v1/<kind>/<contextId>)`. Several references can share one record. |
 | Attachment binding   | The link from an image or file record to its server-owned attachment. Its attachment ID can change without changing `contextId`.    |
 | Attachment inventory | The ordered image records shown as thumbnails above the prose, including images with no inline references.                          |
+| Thread reference     | A `thread` context record naming another thread by id. The server renders that thread's conversation into the provider envelope.    |
 
 See [composer context references](./composer-context-references.md) for the contract and lifecycle.
