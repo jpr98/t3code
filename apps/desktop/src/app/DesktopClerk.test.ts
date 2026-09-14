@@ -24,6 +24,8 @@ vi.mock("@clerk/electron/storage", () => ({
 
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import type * as Electron from "electron";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
@@ -169,6 +171,54 @@ describe("DesktopClerk", () => {
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
     );
   });
+
+  it.effect(
+    "re-reveals the window on second-instance unless it carries a background prompt",
+    () => {
+      storageMock.mockReturnValue(storageAdapter);
+      createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
+      const listeners = new Map<string, (...args: unknown[]) => void>();
+      const electronApp = {
+        quit: Effect.void,
+        on: (eventName: string, listener: (...args: unknown[]) => void) =>
+          Effect.sync(() => {
+            listeners.set(eventName, listener);
+          }),
+      } as unknown as ElectronApp.ElectronApp["Service"];
+      const mainWindow = { id: 1 } as unknown as Electron.BrowserWindow;
+      const revealed: Electron.BrowserWindow[] = [];
+      const electronWindow = {
+        currentMainOrFirst: Effect.succeed(Option.some(mainWindow)),
+        reveal: (window: Electron.BrowserWindow) =>
+          Effect.sync(() => {
+            revealed.push(window);
+          }),
+      } as unknown as ElectronWindow.ElectronWindow["Service"];
+
+      return Effect.gen(function* () {
+        const clerk = yield* DesktopClerk.DesktopClerk;
+        yield* Effect.scoped(clerk.configure);
+        const secondInstance = listeners.get("second-instance");
+        assert.isDefined(secondInstance);
+
+        secondInstance?.({}, ["/usr/bin/t3code", "t3code-dev://prompt?text=hi"]);
+        yield* Effect.yieldNow;
+        assert.deepEqual(revealed, []);
+
+        secondInstance?.({}, ["/usr/bin/t3code", "t3code-dev://prompt?text=hi&focus=1"]);
+        yield* Effect.yieldNow;
+        assert.deepEqual(revealed, [mainWindow]);
+
+        secondInstance?.({}, ["/usr/bin/t3code"]);
+        yield* Effect.yieldNow;
+        assert.deepEqual(revealed, [mainWindow, mainWindow]);
+      }).pipe(
+        Effect.provide(makeDesktopClerkLayer()),
+        Effect.provideService(ElectronApp.ElectronApp, electronApp),
+        Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
+      );
+    },
+  );
 
   it.effect("quits and interrupts startup in a secondary instance", () => {
     storageMock.mockReturnValue(storageAdapter);

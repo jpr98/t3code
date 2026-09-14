@@ -7,12 +7,15 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
+import type * as Electron from "electron";
+
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { isBackgroundPromptLinkArgv } from "./DesktopPromptLink.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
@@ -96,6 +99,7 @@ export const make = Effect.gen(function* () {
   // detection in resolveUserDataPath match on fresh installs.
   const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
+  const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
 
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
@@ -136,16 +140,22 @@ export const make = Effect.gen(function* () {
         return yield* Effect.interrupt;
       }
 
-      yield* electronApp.on("second-instance", () => {
-        void runPromise(
-          Effect.gen(function* () {
-            const mainWindow = yield* electronWindow.currentMainOrFirst;
-            if (Option.isSome(mainWindow)) {
-              yield* electronWindow.reveal(mainWindow.value);
-            }
-          }),
-        );
-      });
+      yield* electronApp.on(
+        "second-instance",
+        (_event: Electron.Event, argv: ReadonlyArray<string>) => {
+          // A `t3code://prompt` link without focus=1 is handled by
+          // DesktopPromptLinkHandler and must not pull the window forward.
+          if (isBackgroundPromptLinkArgv(argv, scheme)) return;
+          void runPromise(
+            Effect.gen(function* () {
+              const mainWindow = yield* electronWindow.currentMainOrFirst;
+              if (Option.isSome(mainWindow)) {
+                yield* electronWindow.reveal(mainWindow.value);
+              }
+            }),
+          );
+        },
+      );
     }).pipe(Effect.withSpan("desktop.clerk.configure")),
   });
 });

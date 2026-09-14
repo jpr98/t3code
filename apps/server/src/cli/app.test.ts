@@ -6,7 +6,10 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import type { DesktopAppActivationRequest } from "@t3tools/contracts";
+import type {
+  DesktopAppActivationRequest,
+  DesktopAppOpenWorkspaceRequest,
+} from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
 import {
   HostProcessPlatform,
@@ -69,7 +72,7 @@ async function startFakeDesktop(input: {
     });
   }
 
-  const received: DesktopAppActivationRequest[] = [];
+  const received: DesktopAppOpenWorkspaceRequest[] = [];
   const server = NodeNet.createServer((socket) => {
     socket.setEncoding("utf8");
     let buffer = "";
@@ -77,7 +80,8 @@ async function startFakeDesktop(input: {
       buffer += chunk;
       const newline = buffer.indexOf("\n");
       if (newline === -1) return;
-      const request = JSON.parse(buffer.slice(0, newline)) as DesktopAppActivationRequest;
+      // `t3 app` only ever sends workspace requests.
+      const request = JSON.parse(buffer.slice(0, newline)) as DesktopAppOpenWorkspaceRequest;
       received.push(request);
       const response = input.reply
         ? input.reply(request)

@@ -69,3 +69,19 @@ auth and platform-managed discovery are skipped and only saved environments (pai
 connect. This is possible because the desktop renderer is not served by the backend: the `t3code://`
 scheme serves the bundled client from disk (Vite in development) and API traffic always goes to the
 environment's own URL.
+
+### Prompt links
+
+`t3code://prompt?text=…&submit=1|0&focus=0|1&environment=<id>&thread=<id>` (`t3code-dev://` in
+development) is a separate host from `app` and `threads` for launchers such as Raycast:
+`open "t3code://prompt?text=hello&submit=1&focus=0"`. It reuses the `t3 app` activation path
+rather than the composer. `apps/desktop/src/app/DesktopPromptLink.ts` parses the URL once and
+`DesktopPromptLinkHandler.ts` collects it from every delivery (`open-url` on macOS, argv on a cold
+start or `second-instance` on Windows and Linux) into the activation broker, which holds requests
+until the renderer's `DesktopAppActivationCoordinator` says the primary environment accepts
+commands. The renderer dispatches `thread.turn.start` (with a `createThread` bootstrap for a new
+thread) through `packages/client-runtime`; nothing touches the composer. Focus is the one trap:
+`focus=0` must never `show()` or `focus()` the window. The broker skips activation for such a
+request, the Clerk `second-instance` handler skips its re-reveal when argv carries one, and a link
+that arrives before the first window is shown flags `DesktopWindow.markBackgroundLaunch` so the
+first reveal uses `showInactive()`. The OS may still activate the app on macOS; `open -g` avoids it.

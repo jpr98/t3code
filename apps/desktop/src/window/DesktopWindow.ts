@@ -83,6 +83,10 @@ export class DesktopWindow extends Context.Service<
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
+    // A background prompt link launched (or reached) the app before its window
+    // was shown: the first reveal must make the window visible without taking
+    // focus. A no-op once the window is already on screen.
+    readonly markBackgroundLaunch: Effect.Effect<void>;
     // Show a lightweight "Connecting to WSL" splash window immediately (wsl-only
     // mode), before the WSL backend that acts as the primary is ready. It is
     // dismissed automatically once the real main window reveals.
@@ -311,6 +315,8 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  // Consumed by the next first reveal; see markBackgroundLaunch.
+  const backgroundLaunchRef = yield* Ref.make(false);
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -800,7 +806,14 @@ export const make = Effect.gen(function* () {
       if (persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
-      void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
+      void runPromise(
+        Ref.getAndSet(backgroundLaunchRef, false).pipe(
+          Effect.flatMap((background) =>
+            background ? electronWindow.showInactive(window) : electronWindow.reveal(window),
+          ),
+          Effect.andThen(dismissConnectingSplash),
+        ),
+      );
     });
 
     loadApplication();
@@ -954,6 +967,11 @@ export const make = Effect.gen(function* () {
       yield* createMainIfBackendReady;
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
+    markBackgroundLaunch: Effect.gen(function* () {
+      const existingWindow = yield* currentMainWindow;
+      if (Option.isSome(existingWindow) && existingWindow.value.isVisible()) return;
+      yield* Ref.set(backgroundLaunchRef, true);
+    }).pipe(Effect.withSpan("desktop.window.markBackgroundLaunch")),
     showConnectingSplash,
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
