@@ -906,7 +906,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const agentAccessCapabilities = Effect.fn("ProviderService.agentAccessCapabilities")(function* (
     threadId: ThreadId,
   ) {
-    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+    // Reading other threads needs no user grant: they belong to the same environment the
+    // agent already works in, and the composer already pushes them into prompts.
+    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests", "threads"]);
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
