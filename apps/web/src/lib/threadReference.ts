@@ -52,25 +52,36 @@ export function resolvePastedThreadReference(input: {
   return match ? { id: match.id, title: match.title } : null;
 }
 
-const THREAD_MENU_LIMIT = 5;
+/** Prefixes inside the `@` query that turn the menu into a thread search: `@t:login`, `@thread:login`. */
+const THREAD_SEARCH_PREFIXES = ["thread:", "t:"];
 
-/** Threads in this environment whose title contains the query, newest first, excluding the current one. */
+/** The thread search text behind `@t:` / `@thread:`, or null when the query is a path search. */
+export function parseThreadSearchQuery(pathQuery: string): string | null {
+  const lower = pathQuery.toLowerCase();
+  const prefix = THREAD_SEARCH_PREFIXES.find((candidate) => lower.startsWith(candidate));
+  return prefix === undefined ? null : pathQuery.slice(prefix.length);
+}
+
+/**
+ * Threads in this environment whose title contains the query, newest first, excluding the
+ * current one. An empty query lists the newest threads, so `@t:` alone is a recents list.
+ */
 export function searchThreadReferences(input: {
   readonly query: string;
   readonly environmentId: EnvironmentId;
   readonly activeThreadId: string | null;
   readonly threads: ReadonlyArray<ThreadReferenceCandidate & { readonly updatedAt: string }>;
+  readonly limit: number;
 }): ThreadReferenceContext[] {
   const query = input.query.trim().toLowerCase();
-  if (query.length === 0) return [];
   return input.threads
     .filter(
       (thread) =>
         thread.environmentId === input.environmentId &&
         thread.id !== input.activeThreadId &&
-        thread.title.toLowerCase().includes(query),
+        (query.length === 0 || thread.title.toLowerCase().includes(query)),
     )
     .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-    .slice(0, THREAD_MENU_LIMIT)
+    .slice(0, input.limit)
     .map((thread) => ({ id: thread.id, title: thread.title }));
 }

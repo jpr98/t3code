@@ -99,9 +99,12 @@ to every provider session alongside `pull-requests`; the excerpt's header names 
 id so the agent knows it can ask for more. OpenCode only connects to the MCP server when it is
 not running against an external server, so the tool is an enhancement, not a replacement.
 
-Web and desktop insert thread chips from the `@` menu (thread titles are searched beside
-workspace paths, current environment only, excluding the active thread) and by pasting a thread
-id or a thread link that names a known thread. Both match against the environment's live shell
+Web and desktop insert thread chips from the `@` menu and by pasting a thread id or a thread link
+that names a known thread. The menu stays on the existing `path` trigger: a `t:` or `thread:`
+prefix inside the `@` query (`parseThreadSearchQuery`) switches it to threads only and skips the
+workspace scan, while a plain query appends a few thread matches below the file results. Thread
+search is title substring, current environment only, excluding the active thread; an empty
+prefixed query lists the newest threads. Both match against the environment's live shell
 list read once per menu recompute or paste (`readThreadShells`, not a subscription, so the
 composer does not re-render on every shell update); archived threads are not in that list, so
 they can be read by the agent once referenced but are not offered for insertion. The paste

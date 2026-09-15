@@ -229,7 +229,11 @@ import {
   threadReferenceContextReference,
   threadReferenceFromRecord,
 } from "~/lib/composerContextRecords";
-import { resolvePastedThreadReference, searchThreadReferences } from "~/lib/threadReference";
+import {
+  parseThreadSearchQuery,
+  resolvePastedThreadReference,
+  searchThreadReferences,
+} from "~/lib/threadReference";
 import { readThreadShells } from "~/state/entities";
 import type { ThreadReferenceContext } from "~/threadReferenceContext";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -2221,10 +2225,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
+  // `@t:` / `@thread:` turns the path menu into a thread search; no workspace scan runs then.
+  const threadSearchQuery = isPathTrigger ? parseThreadSearchQuery(pathTriggerQuery) : null;
+  const isWorkspacePathSearch = isPathTrigger && threadSearchQuery === null;
   const workspaceEntries = useComposerPathSearch({
     environmentId,
-    cwd: isPathTrigger ? gitCwd : null,
-    query: isPathTrigger ? pathTriggerQuery : null,
+    cwd: isWorkspacePathSearch ? gitCwd : null,
+    query: isWorkspacePathSearch ? pathTriggerQuery : null,
   });
   const compactSlashCommandAvailable =
     composerTrigger?.kind === "slash-command" &&
@@ -2303,6 +2310,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
+      // Other threads in this environment share the `@` menu so the agent can be pointed at
+      // earlier work the same way it is pointed at a file: a few ride below the file results,
+      // and `@t:` searches threads alone. Read, not subscribed: shells change constantly while
+      // agents run and the menu only needs them while it is open.
+      const threadQuery = parseThreadSearchQuery(composerTrigger.query);
+      const threadItems =
+        threadQuery === null && composerTrigger.query.trim().length === 0
+          ? []
+          : searchThreadReferences({
+              query: threadQuery ?? composerTrigger.query,
+              environmentId,
+              activeThreadId,
+              threads: readThreadShells(),
+              limit: threadQuery === null ? 5 : 20,
+            }).map((reference): ComposerCommandItem => ({
+              id: `thread:${reference.id}`,
+              type: "thread",
+              threadId: reference.id,
+              label: reference.title,
+              description: "Thread",
+            }));
+      if (threadQuery !== null) return threadItems;
       const pathItems = workspaceEntries.entries.map((entry): ComposerCommandItem => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path",
@@ -2310,21 +2339,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         pathKind: entry.kind,
         label: basenameOfPath(entry.path),
         description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
-      }));
-      // Other threads in this environment share the `@` menu so the agent can be pointed at
-      // earlier work the same way it is pointed at a file. Read, not subscribed: shells change
-      // constantly while agents run and the menu only needs them while it is open.
-      const threadItems = searchThreadReferences({
-        query: composerTrigger.query,
-        environmentId,
-        activeThreadId,
-        threads: readThreadShells(),
-      }).map((reference): ComposerCommandItem => ({
-        id: `thread:${reference.id}`,
-        type: "thread",
-        threadId: reference.id,
-        label: reference.title,
-        description: "Thread",
       }));
       return [...pathItems, ...threadItems];
     }
@@ -2544,7 +2558,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const isComposerMenuLoading =
-    (composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
+    (isWorkspacePathSearch && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
     (composerTriggerKind === "pull-request" &&
       pullRequestProjectId !== null &&
       pullRequestRepository !== null &&
@@ -2553,6 +2567,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         pullRequestTriggerNumber !== debouncedPullRequestNumber ||
         exactPullRequestLookup.isPending));
   const composerMenuEmptyState = useMemo(() => {
+    if (composerTriggerKind === "path") {
+      return threadSearchQuery === null
+        ? "No matching files or folders. Type @t: to search threads."
+        : "No matching threads.";
+    }
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
@@ -2570,9 +2589,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? `No pull request matches ${composerTrigger.query}.`
         : "No pull requests found in this repository.";
     }
-    return composerTriggerKind === "path"
-      ? "No matching files or folders."
-      : "No matching command.";
+    return "No matching command.";
   }, [
     composerTrigger,
     composerTriggerKind,
@@ -2580,6 +2597,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pullRequestLookup.error,
     pullRequestProjectId,
     pullRequestRepository,
+    threadSearchQuery,
   ]);
 
   // ------------------------------------------------------------------

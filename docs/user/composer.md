@@ -71,9 +71,11 @@ navigate to their sources.
 
 ## Reference another thread
 
-Point the agent at an earlier conversation instead of retyping it. On web and desktop, type `@`
-followed by part of a thread's title to list matching threads in the current environment beside
-files and folders, and choose one to insert it as a chip. You can also paste a thread ID or a
+Point the agent at an earlier conversation instead of retyping it. On web and desktop, type `@t:`
+followed by part of a thread's title to search threads in the current environment, and choose one
+to insert it as a chip; `@t:` on its own lists the newest threads, and `@thread:` works the same
+way. A plain `@` search also shows a few matching threads below its file results. Settled threads
+are included. You can also paste a thread ID or a
 thread link into the composer; when it names a thread in this environment's thread list, it
 becomes the same chip. **Copy Thread ID** in the sidebar or command palette provides the ID,
 except for threads with a linked pull request, where it copies the pull request link instead;

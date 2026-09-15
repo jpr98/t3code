@@ -1,7 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolvePastedThreadReference, searchThreadReferences } from "./threadReference";
+import {
+  parseThreadSearchQuery,
+  resolvePastedThreadReference,
+  searchThreadReferences,
+} from "./threadReference";
 
 const env = "primary" as EnvironmentId;
 const threads = [
@@ -80,10 +84,26 @@ describe("resolvePastedThreadReference", () => {
   });
 });
 
+describe("parseThreadSearchQuery", () => {
+  it("recognises the thread prefixes and returns the rest of the query", () => {
+    expect(parseThreadSearchQuery("t:login")).toBe("login");
+    expect(parseThreadSearchQuery("Thread:Login fix")).toBe("Login fix");
+    expect(parseThreadSearchQuery("t:")).toBe("");
+    expect(parseThreadSearchQuery("src/threads.ts")).toBeNull();
+    expect(parseThreadSearchQuery("tests")).toBeNull();
+  });
+});
+
 describe("searchThreadReferences", () => {
   it("searches titles in the current environment, newest first, excluding the current thread", () => {
     expect(
-      searchThreadReferences({ query: "login", environmentId: env, activeThreadId: null, threads }),
+      searchThreadReferences({
+        query: "login",
+        environmentId: env,
+        activeThreadId: null,
+        threads,
+        limit: 5,
+      }),
     ).toEqual([{ id: "9f1c2a3b-0000-4000-8000-000000000001", title: "Fix login redirect" }]);
     expect(
       searchThreadReferences({
@@ -91,10 +111,20 @@ describe("searchThreadReferences", () => {
         environmentId: env,
         activeThreadId: "import:claudeAgent:abc/def",
         threads,
+        limit: 5,
       }),
     ).toEqual([{ id: "9f1c2a3b-0000-4000-8000-000000000001", title: "Fix login redirect" }]);
+  });
+
+  it("lists the newest threads for an empty query, bounded by the limit", () => {
     expect(
-      searchThreadReferences({ query: "  ", environmentId: env, activeThreadId: null, threads }),
-    ).toEqual([]);
+      searchThreadReferences({
+        query: "  ",
+        environmentId: env,
+        activeThreadId: null,
+        threads,
+        limit: 1,
+      }),
+    ).toEqual([{ id: "9f1c2a3b-0000-4000-8000-000000000001", title: "Fix login redirect" }]);
   });
 });
