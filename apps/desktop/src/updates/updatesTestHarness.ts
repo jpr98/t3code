@@ -113,6 +113,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     clearMain: () => Effect.void,
     prepareReveal: () => Effect.succeed(false),
     reveal: () => Effect.void,
+    showInactive: () => Effect.void,
     sendAll: (_channel, state) =>
       Effect.sync(() => {
         sentStates.push(state as DesktopUpdateState);

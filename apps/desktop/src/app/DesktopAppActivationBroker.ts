@@ -15,6 +15,14 @@ interface PendingActivation {
 
 type RendererSender = (request: DesktopAppActivationRequest) => void;
 
+/**
+ * A `t3code://prompt` link that did not ask for focus must never pull the
+ * window forward; every other request exists to show the app.
+ */
+export function requestWantsActivation(request: DesktopAppActivationRequest): boolean {
+  return request.type !== "submit-prompt" || request.focus;
+}
+
 function failure(
   requestId: string,
   code: DesktopAppActivationFailure["code"],
@@ -42,7 +50,10 @@ export class DesktopAppActivationBroker {
     this.#activate = input.activate;
   }
 
-  request(request: DesktopAppActivationRequest): Promise<DesktopAppActivationResponse> {
+  request(
+    request: DesktopAppActivationRequest,
+    options: { readonly timeoutMs?: number } = {},
+  ): Promise<DesktopAppActivationResponse> {
     if (this.#closed) {
       return Promise.resolve(
         failure(request.requestId, "renderer-unavailable", "T3 Code is shutting down."),
@@ -60,10 +71,10 @@ export class DesktopAppActivationBroker {
           failure(
             request.requestId,
             "request-timeout",
-            "The desktop app did not finish opening the project in time.",
+            "The desktop app did not finish handling the request in time.",
           ),
         );
-      }, this.#requestTimeoutMs);
+      }, options.timeoutMs ?? this.#requestTimeoutMs);
       this.#pending.set(request.requestId, {
         request,
         resolve,
@@ -72,7 +83,7 @@ export class DesktopAppActivationBroker {
       });
     });
 
-    this.#activate();
+    if (requestWantsActivation(request)) this.#activate();
     this.#flush();
     return response;
   }

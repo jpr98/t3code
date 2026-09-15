@@ -70,6 +70,24 @@ Pass a path, such as `npx t3 app ../my-project`, to open another directory. It r
 the desktop app, so a standalone server or an SSH session is not enough. If the
 command cannot reach the app, start or update the desktop app and try again.
 
+### Send a prompt from a launcher
+
+The desktop app accepts `t3code://prompt` links, so Raycast, Alfred, a hotkey
+daemon, or a shell alias can hand it a prompt without switching to the app:
+
+```bash
+open "t3code://prompt?text=hello&submit=1&focus=0"
+```
+
+The prompt starts a new thread in the project you last worked in, in its local
+checkout. `focus=1` brings the app forward and opens the thread; the default
+leaves it in the background. `submit=0` puts the text in a new draft instead
+of sending it. Add `thread=<id>` to continue an existing thread, or
+`environment=<id>` to target a connected environment other than the primary.
+If the app is not running, the link starts it and sends the prompt once it has
+connected. Percent-encode the text once; it is capped at the composer's limit.
+On macOS use `open -g` to keep the launcher in front while the app starts.
+
 ## Mobile app
 
 Install T3 Code from the

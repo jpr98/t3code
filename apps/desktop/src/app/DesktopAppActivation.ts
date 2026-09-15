@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Local socket ownership checks need lstat uid and an atomic stale-socket unlink at the Node adapter boundary.
+import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
@@ -7,6 +8,7 @@ import {
   DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
   DesktopAppActivationRequest,
   type DesktopAppActivationResponse,
+  type DesktopAppSubmitPromptRequest,
 } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
 import { HostProcessUserId } from "@t3tools/shared/hostProcess";
@@ -26,9 +28,13 @@ import * as DesktopWindow from "../window/DesktopWindow.ts";
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
+import type { DesktopPromptLink } from "./DesktopPromptLink.ts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+// Nobody waits on a prompt link, so it may outlive a cold start (sign-in,
+// WSL boot) before the renderer can take commands.
+const PROMPT_LINK_TIMEOUT_MS = 5 * 60_000;
 const isDesktopAppActivationRequest = Schema.is(DesktopAppActivationRequest);
 
 export class DesktopAppActivationStartError extends Schema.TaggedError<DesktopAppActivationStartError>()(
@@ -206,12 +212,18 @@ export class DesktopAppActivation extends Context.Service<
   DesktopAppActivation,
   {
     readonly start: Effect.Effect<void, DesktopAppActivationStartError, Scope.Scope>;
+    /**
+     * Queues a `t3code://prompt` link on the same renderer broker as `t3 app`
+     * requests, so it runs once the primary environment accepts commands. The
+     * outcome is only logged; the link has no caller to answer.
+     */
+    readonly submitPrompt: (link: DesktopPromptLink) => Effect.Effect<void>;
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
     readonly complete: (response: DesktopAppActivationResponse) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/app/DesktopAppActivation") {}
 
-const { logWarning } = makeComponentLogger("desktop-app-activation");
+const { logInfo, logWarning } = makeComponentLogger("desktop-app-activation");
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
@@ -269,6 +281,34 @@ export const make = Effect.gen(function* () {
           Effect.ensuring(Effect.sync(() => broker.close())),
         ),
     ).pipe(Effect.asVoid),
+    submitPrompt: Effect.fn("DesktopAppActivation.submitPrompt")(function* (link) {
+      const requestId = NodeCrypto.randomUUID();
+      const request: DesktopAppSubmitPromptRequest = {
+        version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
+        requestId,
+        ...link,
+      };
+      yield* logInfo("prompt link queued", {
+        requestId,
+        submit: link.submit,
+        focus: link.focus,
+        ...(link.threadId === undefined ? {} : { threadId: link.threadId }),
+      });
+      yield* Effect.promise(() =>
+        broker.request(request, { timeoutMs: PROMPT_LINK_TIMEOUT_MS }),
+      ).pipe(
+        Effect.flatMap((response) =>
+          response.ok
+            ? logInfo("prompt link handled", { requestId, threadId: response.threadId })
+            : logWarning("prompt link failed", {
+                requestId,
+                code: response.code,
+                message: response.message,
+              }),
+        ),
+        Effect.forkDetach,
+      );
+    }),
     setRendererReady: Effect.fn("DesktopAppActivation.setRendererReady")(function* (ready) {
       if (!ready) {
         clearRegisteredRenderer();

@@ -130,6 +130,7 @@ function makeFakeBrowserWindow() {
     isFullScreen: window.isFullScreen,
     isMaximized: window.isMaximized,
     isMinimized: window.isMinimized,
+    isVisible: window.isVisible,
     loadURL: window.loadURL,
     maximize: window.maximize,
     openDevTools: webContents.openDevTools,
@@ -222,6 +223,7 @@ function makeTestLayer(input: {
   readonly onPopupTemplate?: (input: ElectronMenu.ElectronMenuTemplateInput) => Effect.Effect<void>;
   readonly previewZoomReapplies?: number[];
   readonly onReveal?: (window: Electron.BrowserWindow) => void;
+  readonly onShowInactive?: (window: Electron.BrowserWindow) => void;
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -273,6 +275,7 @@ function makeTestLayer(input: {
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
     prepareReveal: () => Effect.succeed(false),
     reveal: (window) => Effect.sync(() => input.onReveal?.(window)),
+    showInactive: (window) => Effect.sync(() => input.onShowInactive?.(window)),
     sendAll: () => Effect.void,
     destroyAll: Effect.void,
     syncAllAppearance: (sync) => sync(input.window),
@@ -387,6 +390,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
       clearMain: () => Ref.set(mainWindow, Option.none()),
       prepareReveal: () => Effect.succeed(false),
       reveal: (window) => Ref.update(revealedWindows, (windows) => [...windows, window]),
+      showInactive: () => Effect.void,
       sendAll: () => Effect.void,
       destroyAll: Effect.void,
       syncAllAppearance: (sync) => (fallbackWindow ? sync(fallbackWindow) : Effect.void),
@@ -827,6 +831,77 @@ describe("DesktopWindow", () => {
         }
         readyToShow();
         assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  // A background prompt link (focus=0) that launches the app must still get a
+  // window, but that window may not take focus away from the launcher.
+  it.effect("shows the first window inactive after a background launch", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      fakeWindow.isVisible.mockReturnValue(false);
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const onReveal = vi.fn();
+      const onShowInactive = vi.fn();
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        onReveal,
+        onShowInactive,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.markBackgroundLaunch;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const readyToShow = fakeWindow.windowListeners.get("ready-to-show");
+        if (!readyToShow) {
+          return yield* Effect.die("window ready-to-show listener was not registered");
+        }
+        readyToShow();
+        yield* Effect.yieldNow;
+        assert.equal(onReveal.mock.calls.length, 0);
+        assert.deepEqual(onShowInactive.mock.calls, [[fakeWindow.window]]);
+
+        // The flag is consumed: a later dock or taskbar activation reveals normally.
+        yield* desktopWindow.activate;
+        assert.deepEqual(onReveal.mock.calls, [[fakeWindow.window]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("ignores a background launch once the window is on screen", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const onReveal = vi.fn();
+      const onShowInactive = vi.fn();
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        onReveal,
+        onShowInactive,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        yield* desktopWindow.markBackgroundLaunch;
+
+        const readyToShow = fakeWindow.windowListeners.get("ready-to-show");
+        if (!readyToShow) {
+          return yield* Effect.die("window ready-to-show listener was not registered");
+        }
+        readyToShow();
+        yield* Effect.yieldNow;
+        assert.deepEqual(onReveal.mock.calls, [[fakeWindow.window]]);
+        assert.equal(onShowInactive.mock.calls.length, 0);
       }).pipe(Effect.provide(layer));
     }),
   );

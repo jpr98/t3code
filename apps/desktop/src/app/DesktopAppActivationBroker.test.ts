@@ -1,7 +1,10 @@
 import { ProjectId, ThreadId, type DesktopAppActivationRequest } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
+import {
+  DesktopAppActivationBroker,
+  requestWantsActivation,
+} from "./DesktopAppActivationBroker.ts";
 
 const request: DesktopAppActivationRequest = {
   version: 1,
@@ -11,7 +14,63 @@ const request: DesktopAppActivationRequest = {
   platform: "linux",
 };
 
+const promptRequest: DesktopAppActivationRequest = {
+  version: 1,
+  requestId: "prompt-1",
+  type: "submit-prompt",
+  text: "hello",
+  submit: true,
+  focus: false,
+};
+
 describe("DesktopAppActivationBroker", () => {
+  it("does not activate the window for a background prompt link", async () => {
+    const activate = vi.fn();
+    const send = vi.fn();
+    const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate });
+    broker.registerRenderer(send);
+
+    const response = broker.request(promptRequest);
+    expect(activate).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith(promptRequest);
+    broker.complete({
+      version: 1,
+      requestId: promptRequest.requestId,
+      ok: true,
+      projectId: ProjectId.make("project-1"),
+      threadId: ThreadId.make("thread-1"),
+    });
+
+    await expect(response).resolves.toMatchObject({ ok: true });
+    broker.close();
+  });
+
+  it("activates only when a prompt link asks for focus", () => {
+    expect(requestWantsActivation(promptRequest)).toBe(false);
+    expect(requestWantsActivation({ ...promptRequest, focus: true })).toBe(true);
+    expect(requestWantsActivation(request)).toBe(true);
+  });
+
+  it("honors a per-request timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
+      const response = broker.request(promptRequest, { timeoutMs: 5_000 });
+      await vi.advanceTimersByTimeAsync(1_500);
+      let settled = false;
+      void response.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(4_000);
+      await expect(response).resolves.toMatchObject({ ok: false, code: "request-timeout" });
+      broker.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("focuses immediately and waits for renderer readiness", async () => {
     const activate = vi.fn();
     const send = vi.fn();

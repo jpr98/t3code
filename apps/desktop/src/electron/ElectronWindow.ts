@@ -119,6 +119,8 @@ export class ElectronWindow extends Context.Service<
     readonly clearMain: (window: Option.Option<Electron.BrowserWindow>) => Effect.Effect<void>;
     readonly prepareReveal: (window: Electron.BrowserWindow) => Effect.Effect<boolean>;
     readonly reveal: (window: Electron.BrowserWindow) => Effect.Effect<void>;
+    /** Makes a hidden window visible without taking focus from the current app. */
+    readonly showInactive: (window: Electron.BrowserWindow) => Effect.Effect<void>;
     readonly sendAll: (channel: string, ...args: readonly unknown[]) => Effect.Effect<void>;
     readonly destroyAll: Effect.Effect<void>;
     readonly syncAllAppearance: <E, R>(
@@ -327,6 +329,11 @@ export const make = Effect.gen(function* () {
             cause,
           }),
       }).pipe(Effect.orDie),
+    showInactive: (window) =>
+      Effect.sync(() => {
+        if (window.isDestroyed() || window.isVisible()) return;
+        window.showInactive();
+      }),
     sendAll: (channel, ...args) =>
       Effect.gen(function* () {
         for (const window of yield* listWindows) {
