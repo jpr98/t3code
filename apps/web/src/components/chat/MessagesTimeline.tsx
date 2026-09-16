@@ -31,6 +31,7 @@ import {
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import { rememberThreadScrollAnchor } from "./threadScrollMemory";
 import type {
   AgentPanelModel,
   RuntimeSubagent,
@@ -500,12 +501,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // The list stays mounted across thread switches. Its first end pins on the
   // new thread must snap, not glide, even if that thread is mid-turn.
   const [settlingListIdentity, setSettlingListIdentity] = useState<string | null>(null);
+  // A data swap can emit scroll events carrying the old thread's offset
+  // against the new thread's rows. Nothing is remembered until the switch
+  // has settled, so the restore below reads what the user actually left.
+  const scrollAnchorCaptureBlockedRef = useRef(false);
   let paintedExpandedTurnIds = expandedTurnIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
   let paintedExpandedSpawnEntryIds = expandedSpawnEntryIds;
   if (listIdentityRef.current !== listIdentityKey) {
     listIdentityRef.current = listIdentityKey;
     previousLatestTurnRef.current = latestTurn;
+    scrollAnchorCaptureBlockedRef.current = true;
     setSettlingListIdentity(listIdentityKey);
     paintedExpandedTurnIds = new Set();
     paintedExpandedWorkGroupIds = new Set();
@@ -557,6 +563,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     let second: number | null = null;
     const first = requestAnimationFrame(() => {
       second = requestAnimationFrame(() => {
+        scrollAnchorCaptureBlockedRef.current = false;
         setSettlingListIdentity((current) => (current === settlingListIdentity ? null : current));
       });
     });
@@ -819,6 +826,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const isAtEnd = resolveTimelineIsAtEnd(state);
     if (isAtEnd !== undefined && !citationPositioning) {
       onIsAtEndChange(isAtEnd);
+    }
+    if (state && isAtEnd !== undefined && !citationPositioning) {
+      if (!scrollAnchorCaptureBlockedRef.current) {
+        const anchor = isAtEnd ? undefined : resolveWorkGroupScrollAnchor(state);
+        rememberThreadScrollAnchor(
+          listIdentityRef.current,
+          anchor ? { rowId: anchor.rowId, offsetWithinRow: anchor.offsetWithinRow } : null,
+        );
+      }
     }
     reportContentOverflow();
     if (!state || minimapItems.length === 0) {

@@ -345,6 +345,10 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
+import {
+  peekThreadScrollAnchor,
+  resolveThreadScrollRestoreTarget,
+} from "./chat/threadScrollMemory";
 import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
@@ -5179,10 +5183,50 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     displayedTimelineKeyRef.current = displayKey;
-    // Keep the list mounted across jumps; pin the newly displayed thread to
-    // its end the way a remount used to via initialScrollAtEnd.
-    scrollToEnd();
-  }, [activeThreadKey, displayedTimeline.displayThreadKey, scrollToEnd]);
+    // Keep the list mounted across jumps. A thread the user left mid-history
+    // reopens where they were reading; anything else pins to its end the way
+    // a remount used to via initialScrollAtEnd.
+    const anchor = peekThreadScrollAnchor(displayKey);
+    if (anchor === null) {
+      scrollToEnd();
+      return;
+    }
+    let cancelled = false;
+    let frame = 0;
+    const restore = (remainingAttempts: number) => {
+      if (cancelled) return;
+      const list = legendListRef.current;
+      if (!list) {
+        // The list remounts after an empty thread; give it a frame to appear.
+        if (remainingAttempts > 0) {
+          frame = requestAnimationFrame(() => restore(remainingAttempts - 1));
+        }
+        return;
+      }
+      const target = resolveThreadScrollRestoreTarget(anchor, list.getState().indexByKey);
+      if (target === null) {
+        scrollToEnd();
+        return;
+      }
+      // Restoring lands away from the live edge, so follow goes off first or
+      // the next streamed row would snap the viewport back to the end.
+      cancelTimelineLiveFollowForUserNavigation();
+      setTimelineAnchor(releaseChatTimelineAnchor);
+      // The first not-at-end scroll event then takes the pill-showing branch.
+      isAtEndRef.current = true;
+      void list.scrollToIndex({ ...target, viewPosition: 0, animated: false });
+    };
+    frame = requestAnimationFrame(() => restore(3));
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    activeThreadKey,
+    cancelTimelineLiveFollowForUserNavigation,
+    displayedTimeline.displayThreadKey,
+    scrollToEnd,
+  ]);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
