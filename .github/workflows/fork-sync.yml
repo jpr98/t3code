@@ -123,7 +123,13 @@ jobs:
           set -euo pipefail
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           body="$(printf '%s\n\nRun: %s\n\n%s\n\nResolve it locally: `git fetch --no-tags upstream main && git merge upstream/main`, fix, push to main. The next sync run closes nothing automatically; close this issue once main is in sync.' "$REASON" "$run_url" "$DETAILS")"
-          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty')"
+          # Forks have Issues disabled by default. Without them the failed run
+          # (and GitHub's failure email) is the only notification.
+          if ! existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty' 2>&1)"; then
+            echo "::warning::Could not open an issue ($existing). Enable Issues on the repository to get one; the failed run is the notification until then."
+            printf '%s\n' "$body"
+            exit 0
+          fi
           if [[ -n "$existing" ]]; then
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
