@@ -1,0 +1,131 @@
+# Fork-only: merges pingdotgg/t3code main into this fork's main on a schedule.
+# A clean merge is pushed and the fork release workflow is dispatched
+# explicitly, because pushes made with the workflow token never fire other
+# workflows' push triggers. A conflict or a failing typecheck aborts the merge,
+# leaves main untouched, and opens (or updates) an issue.
+name: Fork sync
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Dispatch the fork release workflow after a successful sync
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: pingdotgg/t3code
+  ISSUE_TITLE: "Fork sync needs attention"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: merge
+        name: Merge upstream main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          # --no-tags keeps upstream's release tags out of the fork, where they
+          # would confuse "latest release" lookups and upstream's tag workflows.
+          git fetch --no-tags upstream main
+
+          behind="$(git rev-list --count HEAD..upstream/main)"
+          echo "Fork main is $behind commit(s) behind upstream main."
+          if [[ "$behind" == "0" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit upstream/main; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            git merge --abort
+            {
+              echo "reason=Merge conflict with upstream main."
+              echo "details<<END"
+              echo "Conflicting files:"
+              echo '```'
+              echo "$conflicts"
+              echo '```'
+              echo "END"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        if: steps.merge.outputs.changed == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install dependencies
+        if: steps.merge.outputs.changed == 'true'
+        run: vp install --filter=t3... --filter=@t3tools/scripts...
+
+      - id: typecheck
+        name: Typecheck server and web
+        if: steps.merge.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! vp run --filter t3 --filter @t3tools/web typecheck; then
+            echo "reason=Typecheck failed after merging upstream main." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Push merged main
+        if: steps.merge.outputs.changed == 'true'
+        run: git push origin HEAD:main
+
+      - name: Dispatch fork release
+        if: steps.merge.outputs.changed == 'true' && (github.event_name == 'schedule' || inputs.release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run fork-release.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Open or update the attention issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ steps.merge.outputs.reason || steps.typecheck.outputs.reason || 'The sync job failed; see the run log.' }}
+          DETAILS: ${{ steps.merge.outputs.details }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$(printf '%s\n\nRun: %s\n\n%s\n\nResolve it locally: `git fetch --no-tags upstream main && git merge upstream/main`, fix, push to main. The next sync run closes nothing automatically; close this issue once main is in sync.' "$REASON" "$run_url" "$DETAILS")"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body"
+          fi
