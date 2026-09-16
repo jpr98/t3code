@@ -167,7 +167,8 @@ fi
 # Prune old version directories, keeping the new one, the previous one, and
 # the KEEP most recently modified others.
 keep_list="$(printf '%s\n%s\n' "$VERSION" "$active_version")"
-ls -1t "$VERSIONS_DIR" | grep -vxF -f <(printf '%s\n' "$keep_list") | tail -n +"$((KEEP + 1))" | while read -r old; do
+# "|| true": grep exits 1 when every directory is in the keep list.
+ls -1t "$VERSIONS_DIR" | { grep -vxF -f <(printf '%s\n' "$keep_list") || true; } | tail -n +"$((KEEP + 1))" | while read -r old; do
   echo "Removing old version $old"
   rm -rf "${VERSIONS_DIR:?}/$old"
 done

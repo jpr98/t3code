@@ -41,9 +41,10 @@ VERSION="${TAG#fork-v}"
 installed_version=""
 if [[ -d "$APP_PATH" ]]; then
   installed_version="$(defaults read "$APP_PATH/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
-  executable="$(defaults read "$APP_PATH/Contents/Info" CFBundleExecutable 2>/dev/null || true)"
-  if [[ -n "$executable" ]] && pgrep -x "$executable" >/dev/null; then
-    die "\"$executable\" is running. Quit T3 Code, then run this again."
+  # Match on the bundle path: pgrep -x does not see Electron's process name.
+  app_pattern="$(printf '%s' "$APP_PATH/Contents/MacOS/" | sed 's/[][\.*^$()+?{}|\\]/\\&/g')"
+  if pgrep -f "$app_pattern" >/dev/null; then
+    die "$(basename "$APP_PATH") is running. Quit T3 Code, then run this again."
   fi
 fi
 
