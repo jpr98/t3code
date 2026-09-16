@@ -1,4 +1,5 @@
 import * as NodeModule from "node:module";
+import * as NodeURL from "node:url";
 
 import type {
   DirItem,
@@ -32,7 +33,25 @@ import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 // Node single-executable (only built-ins resolve there), so load it through
 // `require`, which reads from the real filesystem in every runtime.
 const requireForFff = NodeModule.createRequire(import.meta.url);
-const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+const { FileFinder } = loadFff();
+
+/**
+ * fff-node's exports map only has an `import` entry. Newer Node releases (24.21 and later)
+ * stop letting `require` match it, so fall back to resolving the entry as an import and
+ * requiring that file directly, which needs no exports match.
+ */
+function loadFff(): typeof import("@ff-labs/fff-node") {
+  try {
+    return requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+    return requireForFff(
+      NodeURL.fileURLToPath(import.meta.resolve("@ff-labs/fff-node")),
+    ) as typeof import("@ff-labs/fff-node");
+  }
+}
 
 const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
